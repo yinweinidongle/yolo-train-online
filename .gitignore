@@ -1,0 +1,33 @@
+.DS_Store
+.idea/
+.vscode/
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.log
+
+# Backend
+backend/venv/
+backend/*.db
+backend/uploads/*
+backend/datasets/*
+backend/models/*
+backend/runs/*
+
+# Keep directory structure
+!backend/uploads/.gitkeep
+!backend/datasets/.gitkeep
+!backend/models/.gitkeep
+!backend/runs/.gitkeep
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
