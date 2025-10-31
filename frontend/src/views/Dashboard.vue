@@ -1,8 +1,9 @@
 <template>
   <div class="dashboard">
-    <a-row :gutter="16">
-      <a-col :span="6">
-        <a-card>
+    <!-- Statistics Cards -->
+    <a-row :gutter="[16, 16]">
+      <a-col :xs="24" :sm="12" :md="6">
+        <a-card class="stat-card">
           <a-statistic
             title="数据集总数"
             :value="stats.dataset_count"
@@ -11,8 +12,8 @@
           />
         </a-card>
       </a-col>
-      <a-col :span="6">
-        <a-card>
+      <a-col :xs="24" :sm="12" :md="6">
+        <a-card class="stat-card">
           <a-statistic
             title="模型总数"
             :value="stats.model_count"
@@ -21,8 +22,8 @@
           />
         </a-card>
       </a-col>
-      <a-col :span="6">
-        <a-card>
+      <a-col :xs="24" :sm="12" :md="6">
+        <a-card class="stat-card">
           <a-statistic
             title="训练任务"
             :value="stats.task_count"
@@ -31,8 +32,8 @@
           />
         </a-card>
       </a-col>
-      <a-col :span="6">
-        <a-card>
+      <a-col :xs="24" :sm="12" :md="6">
+        <a-card class="stat-card">
           <a-statistic
             title="训练中"
             :value="stats.training_count"
@@ -43,10 +44,13 @@
       </a-col>
     </a-row>
 
-    <a-row :gutter="16" style="margin-top: 16px">
-      <a-col :span="12">
-        <a-card title="最近数据集" :loading="loading">
+    <!-- Recent Data -->
+    <a-row :gutter="[16, 16]" class="recent-section">
+      <a-col :xs="24" :lg="12">
+        <a-card title="最近数据集" :loading="loading" class="content-card">
+          <a-empty v-if="recentDatasets.length === 0" description="暂无数据集" />
           <a-list
+            v-else
             item-layout="horizontal"
             :data-source="recentDatasets"
           >
@@ -73,9 +77,11 @@
         </a-card>
       </a-col>
 
-      <a-col :span="12">
-        <a-card title="最近训练任务" :loading="loading">
+      <a-col :xs="24" :lg="12">
+        <a-card title="最近训练任务" :loading="loading" class="content-card">
+          <a-empty v-if="recentTasks.length === 0" description="暂无训练任务" />
           <a-list
+            v-else
             item-layout="horizontal"
             :data-source="recentTasks"
           >
@@ -109,21 +115,28 @@
       </a-col>
     </a-row>
 
-    <a-card title="快速操作" style="margin-top: 16px">
-      <a-space size="large">
-        <a-button type="primary" size="large" @click="goToDatasets">
-          <template #icon><upload-outlined /></template>
-          上传数据集
-        </a-button>
-        <a-button type="primary" size="large" @click="goToTraining">
-          <template #icon><play-circle-outlined /></template>
-          创建训练任务
-        </a-button>
-        <a-button size="large" @click="goToModels">
-          <template #icon><download-outlined /></template>
-          查看模型
-        </a-button>
-      </a-space>
+    <!-- Quick Actions -->
+    <a-card title="快速操作" class="actions-card">
+      <a-row :gutter="[16, 16]">
+        <a-col :xs="24" :sm="8">
+          <a-button type="primary" size="large" block @click="goToDatasets">
+            <template #icon><upload-outlined /></template>
+            上传数据集
+          </a-button>
+        </a-col>
+        <a-col :xs="24" :sm="8">
+          <a-button type="primary" size="large" block @click="goToTraining">
+            <template #icon><play-circle-outlined /></template>
+            创建训练任务
+          </a-button>
+        </a-col>
+        <a-col :xs="24" :sm="8">
+          <a-button size="large" block @click="goToModels">
+            <template #icon><download-outlined /></template>
+            查看模型
+          </a-button>
+        </a-col>
+      </a-row>
     </a-card>
   </div>
 </template>
@@ -232,5 +245,44 @@ onMounted(() => {
 <style scoped>
 .dashboard {
   width: 100%;
+  padding-bottom: 24px;
+}
+
+.stat-card {
+  height: 100%;
+  min-height: 120px;
+}
+
+.recent-section {
+  margin-top: 16px;
+}
+
+.content-card {
+  height: 100%;
+  min-height: 400px;
+}
+
+.content-card :deep(.ant-card-body) {
+  padding: 16px;
+  min-height: 350px;
+}
+
+.actions-card {
+  margin-top: 16px;
+}
+
+.actions-card :deep(.ant-card-body) {
+  padding: 24px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .content-card {
+    min-height: 300px;
+  }
+  
+  .content-card :deep(.ant-card-body) {
+    min-height: 250px;
+  }
 }
 </style>

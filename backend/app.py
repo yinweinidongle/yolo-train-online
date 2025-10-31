@@ -6,6 +6,10 @@ from datetime import datetime
 from models import db, Dataset, Model, TrainingTask
 from train_service import TrainingService
 import json
+import cv2
+import numpy as np
+from ultralytics import YOLO
+import base64
 
 app = Flask(__name__)
 CORS(app)
@@ -135,6 +139,39 @@ def delete_dataset(dataset_id):
     except Exception as e:
         return jsonify({'code': 500, 'message': f'删除失败: {str(e)}'}), 500
 
+@app.route('/api/datasets/<int:dataset_id>/download', methods=['GET'])
+def download_dataset(dataset_id):
+    """下载数据集"""
+    dataset = Dataset.query.get_or_404(dataset_id)
+    
+    if not dataset.path or not os.path.exists(dataset.path):
+        return jsonify({'code': 404, 'message': '数据集文件不存在'}), 404
+    
+    try:
+        import shutil
+        import tempfile
+        
+        # 创建临时zip文件
+        temp_dir = tempfile.gettempdir()
+        zip_filename = f"{dataset.name}_{dataset_id}.zip"
+        zip_path = os.path.join(temp_dir, zip_filename)
+        
+        # 压缩数据集目录
+        shutil.make_archive(
+            zip_path.replace('.zip', ''),
+            'zip',
+            dataset.path
+        )
+        
+        return send_file(
+            zip_path,
+            as_attachment=True,
+            download_name=zip_filename,
+            mimetype='application/zip'
+        )
+    except Exception as e:
+        return jsonify({'code': 500, 'message': f'下载失败: {str(e)}'}), 500
+
 # ==================== 模型管理 API ====================
 
 @app.route('/api/models', methods=['GET'])
@@ -186,7 +223,75 @@ def download_model(model_id):
     if not model.weight_path or not os.path.exists(model.weight_path):
         return jsonify({'code': 404, 'message': '模型文件不存在'}), 404
     
-    return send_file(model.weight_path, as_attachment=True)
+    # 获取文件名
+    filename = os.path.basename(model.weight_path)
+    
+    return send_file(
+        model.weight_path,
+        as_attachment=True,
+        download_name=filename,
+        mimetype='application/octet-stream'
+    )
+
+@app.route('/api/models/<int:model_id>/training-images', methods=['GET'])
+def get_training_images(model_id):
+    """获取模型训练结果图片列表"""
+    model = Model.query.get_or_404(model_id)
+    
+    print(f"DEBUG: Getting training images for model {model_id}")
+    print(f"DEBUG: config_path = {model.config_path}")
+    
+    images = []
+    
+    # 从 metrics中获取图片路径，或从 config_path 查找
+    if model.config_path and os.path.exists(model.config_path):
+        train_dir = os.path.join(model.config_path, 'train')
+        print(f"DEBUG: train_dir = {train_dir}")
+        print(f"DEBUG: train_dir exists = {os.path.exists(train_dir)}")
+        
+        if os.path.exists(train_dir):
+            # 常见的训练结果图片
+            image_files = [
+                'results.png',
+                'confusion_matrix.png',
+                'confusion_matrix_normalized.png',
+                'F1_curve.png',
+                'P_curve.png',
+                'R_curve.png',
+                'PR_curve.png'
+            ]
+            
+            for img_file in image_files:
+                img_path = os.path.join(train_dir, img_file)
+                if os.path.exists(img_path):
+                    images.append({
+                        'name': img_file,
+                        'url': f'/models/{model_id}/training-images/{img_file}'
+                    })
+                    print(f"DEBUG: Found image: {img_file}")
+    
+    print(f"DEBUG: Total images found: {len(images)}")
+    
+    return jsonify({
+        'code': 200,
+        'data': images,
+        'message': '获取成功'
+    })
+
+@app.route('/api/models/<int:model_id>/training-images/<path:filename>', methods=['GET'])
+def get_training_image(model_id, filename):
+    """获取具体的训练图片"""
+    model = Model.query.get_or_404(model_id)
+    
+    if not model.config_path:
+        return jsonify({'code': 404, 'message': '训练结果不存在'}), 404
+    
+    img_path = os.path.join(model.config_path, 'train', filename)
+    
+    if not os.path.exists(img_path):
+        return jsonify({'code': 404, 'message': '图片不存在'}), 404
+    
+    return send_file(img_path, mimetype='image/png')
 
 # ==================== 训练任务 API ====================
 
@@ -315,6 +420,126 @@ def get_stats():
         },
         'message': '获取成功'
     })
+
+# ==================== 模型推理 API ====================
+
+@app.route('/api/inference/predict', methods=['POST'])
+def predict():
+    """模型推理/验证"""
+    if 'image' not in request.files:
+        return jsonify({'code': 400, 'message': '没有上传图片'}), 400
+    
+    image_file = request.files['image']
+    model_id = request.form.get('model_id')
+    confidence = float(request.form.get('confidence', 0.25))
+    iou = float(request.form.get('iou', 0.45))
+    
+    if not model_id:
+        return jsonify({'code': 400, 'message': '缺少模型 ID'}), 400
+    
+    try:
+        # 获取模型
+        model = Model.query.get(model_id)
+        if not model:
+            return jsonify({'code': 404, 'message': '模型不存在'}), 404
+        
+        if not model.weight_path or not os.path.exists(model.weight_path):
+            return jsonify({'code': 404, 'message': '模型文件不存在'}), 404
+        
+        # 读取图片
+        image_bytes = image_file.read()
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img is None:
+            return jsonify({'code': 400, 'message': '无效的图片文件'}), 400
+        
+        # 加载模型
+        yolo_model = YOLO(model.weight_path)
+        
+        # 执行推理
+        import time
+        start_time = time.time()
+        results = yolo_model.predict(
+            img,
+            conf=confidence,
+            iou=iou,
+            verbose=False
+        )
+        inference_time = int((time.time() - start_time) * 1000)
+        
+        # 解析结果
+        result = results[0]
+        detections = []
+        
+        # 处理不同任务类型
+        task_type = model.task_type
+        
+        if task_type == 'classify':
+            # 分类任务
+            if hasattr(result, 'probs') and result.probs is not None:
+                probs = result.probs.data.cpu().numpy()
+                top5_idx = probs.argsort()[::-1][:5]
+                
+                for idx in top5_idx:
+                    detections.append({
+                        'class': result.names[idx],
+                        'confidence': float(probs[idx]),
+                        'bbox': None
+                    })
+                
+                # 绘制结果（分类任务只显示原图+文字）
+                annotated_img = img.copy()
+                # 添加文字标注
+                top_class = result.names[top5_idx[0]]
+                top_conf = float(probs[top5_idx[0]])
+                cv2.putText(annotated_img, f'{top_class}: {top_conf:.2f}', 
+                           (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            else:
+                annotated_img = img
+        
+        elif task_type in ['detect', 'segment']:
+            # 检测/分割任务
+            annotated_img = result.plot()
+            
+            # 提取检测信息
+            if result.boxes is not None and len(result.boxes) > 0:
+                for box in result.boxes:
+                    bbox = box.xyxy[0].cpu().numpy().tolist()
+                    conf = float(box.conf[0].cpu().numpy())
+                    cls = int(box.cls[0].cpu().numpy())
+                    class_name = result.names[cls]
+                    
+                    detections.append({
+                        'class': class_name,
+                        'confidence': conf,
+                        'bbox': bbox
+                    })
+        else:
+            # 未知任务类型，使用默认处理
+            annotated_img = result.plot()
+        
+        # 将结果图片转为base64
+        _, buffer = cv2.imencode('.jpg', annotated_img)
+        img_base64 = base64.b64encode(buffer).decode('utf-8')
+        img_data_url = f'data:image/jpeg;base64,{img_base64}'
+        
+        return jsonify({
+            'code': 200,
+            'data': {
+                'image': img_data_url,
+                'detections': detections,
+                'inference_time': inference_time,
+                'task_type': task_type
+            },
+            'message': '识别成功'
+        })
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"Inference error: {str(e)}")
+        print(error_trace)
+        return jsonify({'code': 500, 'message': f'识别失败: {str(e)}'}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

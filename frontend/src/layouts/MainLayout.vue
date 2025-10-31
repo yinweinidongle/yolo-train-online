@@ -3,7 +3,7 @@
     <a-layout-sider v-model:collapsed="collapsed" collapsible>
       <div class="logo">
         <img src="/logo.svg" alt="YOLO" v-if="!collapsed" />
-        <span v-if="!collapsed">YOLOv11训练平台</span>
+        <span v-if="!collapsed">图像识别可视化训练平台</span>
       </div>
       <a-menu
         v-model:selectedKeys="selectedKeys"
@@ -27,6 +27,10 @@
           <appstore-outlined />
           <span>模型管理</span>
         </a-menu-item>
+        <a-menu-item key="inference">
+          <scan-outlined />
+          <span>模型验证</span>
+        </a-menu-item>
       </a-menu>
     </a-layout-sider>
     <a-layout>
@@ -40,6 +44,20 @@
                 刷新
               </a-button>
             </a-badge>
+            <a-dropdown>
+              <a-button type="text">
+                <template #icon><user-outlined /></template>
+                {{ username }}
+              </a-button>
+              <template #overlay>
+                <a-menu>
+                  <a-menu-item key="logout" @click="handleLogout">
+                    <logout-outlined />
+                    退出登录
+                  </a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
           </a-space>
         </div>
       </a-layout-header>
@@ -53,7 +71,7 @@
         </div>
       </a-layout-content>
       <a-layout-footer style="text-align: center">
-        YOLOv11在线训练平台 ©2024 
+        图像识别可视化训练平台 ©2024 
       </a-layout-footer>
     </a-layout>
   </a-layout>
@@ -67,9 +85,13 @@ import {
   DatabaseOutlined,
   ExperimentOutlined,
   AppstoreOutlined,
-  SyncOutlined
+  SyncOutlined,
+  ScanOutlined,
+  UserOutlined,
+  LogoutOutlined
 } from '@ant-design/icons-vue'
 import { getStats } from '@/api'
+import { message } from 'ant-design-vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -78,6 +100,7 @@ const collapsed = ref(false)
 const selectedKeys = ref(['dashboard'])
 const loading = ref(false)
 const trainingCount = ref(0)
+const username = ref(localStorage.getItem('username') || 'admin')
 
 const currentTitle = computed(() => {
   return route.meta.title || '仪表盘'
@@ -95,6 +118,13 @@ const refreshData = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const handleLogout = () => {
+  localStorage.removeItem('isLoggedIn')
+  localStorage.removeItem('username')
+  message.success('退出成功')
+  router.push('/login')
 }
 
 onMounted(() => {

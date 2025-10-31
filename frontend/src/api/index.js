@@ -42,6 +42,14 @@ export function deleteDataset(id) {
   })
 }
 
+export function downloadDataset(id) {
+  return request({
+    url: `/datasets/${id}/download`,
+    method: 'get',
+    responseType: 'blob'
+  })
+}
+
 // ========== 模型相关 ==========
 export function getModels() {
   return request({
@@ -69,6 +77,25 @@ export function downloadModel(id) {
     url: `/models/${id}/download`,
     method: 'get',
     responseType: 'blob'
+  })
+}
+
+export function getModelTrainingImages(id) {
+  return request({
+    url: `/models/${id}/training-images`,
+    method: 'get'
+  })
+}
+
+// ========== 模型推理相关 ==========
+export function runInference(formData) {
+  return request({
+    url: '/inference/predict',
+    method: 'post',
+    data: formData,
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
   })
 }
 

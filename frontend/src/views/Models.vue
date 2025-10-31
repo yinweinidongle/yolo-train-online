@@ -62,7 +62,7 @@
       v-model:open="detailModalVisible"
       title="模型详情"
       :footer="null"
-      width="700px"
+      width="900px"
     >
       <a-descriptions bordered :column="2" v-if="currentModel">
         <a-descriptions-item label="模型名称" :span="2">
@@ -93,7 +93,7 @@
         <h4>训练参数</h4>
         <a-descriptions bordered :column="2">
           <a-descriptions-item
-            v-for="(value, key) in currentModel.metrics"
+            v-for="(value, key) in getFilteredMetrics(currentModel.metrics)"
             :key="key"
             :label="formatMetricLabel(key)"
           >
@@ -101,6 +101,32 @@
           </a-descriptions-item>
         </a-descriptions>
       </div>
+
+      <!-- 训练结果图片 -->
+      <div v-if="trainingImages.length > 0" style="margin-top: 24px">
+        <a-divider />
+        <h4>训练结果</h4>
+        <a-spin :spinning="loadingImages">
+          <div class="training-images">
+            <div v-for="img in trainingImages" :key="img.name" class="image-item">
+              <h5>{{ formatImageName(img.name) }}</h5>
+              <img :src="getImageUrl(img.url)" :alt="img.name" @click="previewImage(getImageUrl(img.url))" />
+            </div>
+          </div>
+        </a-spin>
+      </div>
+      
+      <a-empty v-else-if="!loadingImages" description="暂无训练结果图片" style="margin-top: 24px" />
+    </a-modal>
+
+    <!-- 图片预览对话框 -->
+    <a-modal
+      v-model:open="imagePreviewVisible"
+      :footer="null"
+      width="80%"
+      centered
+    >
+      <img :src="previewImageUrl" style="width: 100%" alt="预览" />
     </a-modal>
   </div>
 </template>
@@ -112,7 +138,7 @@ import {
   ReloadOutlined,
   AppstoreOutlined
 } from '@ant-design/icons-vue'
-import { getModels, deleteModel, downloadModel } from '@/api'
+import { getModels, deleteModel, downloadModel, getModelTrainingImages } from '@/api'
 
 const columns = [
   { title: '模型名称', key: 'name', dataIndex: 'name' },
@@ -133,6 +159,10 @@ const pagination = reactive({
 
 const detailModalVisible = ref(false)
 const currentModel = ref(null)
+const trainingImages = ref([])
+const loadingImages = ref(false)
+const imagePreviewVisible = ref(false)
+const previewImageUrl = ref('')
 
 const getTaskTypeColor = (type) => {
   const colorMap = {
@@ -183,20 +213,42 @@ const loadModels = async () => {
   }
 }
 
-const viewModel = (record) => {
+const viewModel = async (record) => {
   currentModel.value = record
   detailModalVisible.value = true
+  
+  // 加载训练结果图片
+  trainingImages.value = []
+  loadingImages.value = true
+  try {
+    const res = await getModelTrainingImages(record.id)
+    trainingImages.value = res.data
+  } catch (error) {
+    console.error('加载训练图片失败:', error)
+  } finally {
+    loadingImages.value = false
+  }
 }
 
 const handleDownload = async (id) => {
   try {
     const res = await downloadModel(id)
     
+    // 获取文件名，从响应头中获取或使用默认名称
+    let filename = `model_${id}.pt`
+    const contentDisposition = res.headers['content-disposition']
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename="?(.+)"?/)
+      if (filenameMatch) {
+        filename = filenameMatch[1]
+      }
+    }
+    
     // 创建下载链接
     const url = window.URL.createObjectURL(new Blob([res.data]))
     const link = document.createElement('a')
     link.href = url
-    link.setAttribute('download', `model_${id}.pt`)
+    link.setAttribute('download', filename)
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -205,6 +257,7 @@ const handleDownload = async (id) => {
     message.success('下载成功')
   } catch (error) {
     console.error('下载失败:', error)
+    message.error('下载失败，请稍后再试')
   }
 }
 
@@ -216,6 +269,40 @@ const handleDelete = async (id) => {
   } catch (error) {
     console.error('删除失败:', error)
   }
+}
+
+const getFilteredMetrics = (metrics) => {
+  // 过滤掉图片路径，只显示训练参数
+  const filtered = {}
+  for (const [key, value] of Object.entries(metrics)) {
+    if (!key.includes('_img') && !key.includes('_matrix')) {
+      filtered[key] = value
+    }
+  }
+  return filtered
+}
+
+const getImageUrl = (url) => {
+  // 添加baseURL
+  return `/api${url}`
+}
+
+const formatImageName = (name) => {
+  const nameMap = {
+    'results.png': '训练结果总览',
+    'confusion_matrix.png': '混淆矩阵',
+    'confusion_matrix_normalized.png': '混淆矩阵(归一化)',
+    'F1_curve.png': 'F1曲线',
+    'P_curve.png': '精确率曲线',
+    'R_curve.png': '召回率曲线',
+    'PR_curve.png': 'PR曲线'
+  }
+  return nameMap[name] || name
+}
+
+const previewImage = (url) => {
+  previewImageUrl.value = url
+  imagePreviewVisible.value = true
 }
 
 onMounted(() => {
@@ -230,5 +317,37 @@ onMounted(() => {
 
 .toolbar {
   margin-bottom: 16px;
+}
+
+.training-images {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  gap: 24px;
+  margin-top: 16px;
+}
+
+.image-item {
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fafafa;
+}
+
+.image-item h5 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+}
+
+.image-item img {
+  width: 100%;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.image-item img:hover {
+  transform: scale(1.02);
 }
 </style>

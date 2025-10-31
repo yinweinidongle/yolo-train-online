@@ -50,6 +50,9 @@
             <a-button type="link" size="small" @click="viewDataset(record)">
               详情
             </a-button>
+            <a-button type="link" size="small" @click="handleDownload(record.id)">
+              下载
+            </a-button>
             <a-popconfirm
               title="确定要删除此数据集吗？"
               ok-text="确定"
@@ -187,7 +190,7 @@ import {
   ReloadOutlined,
   DatabaseOutlined
 } from '@ant-design/icons-vue'
-import { getDatasets, uploadDataset, deleteDataset } from '@/api'
+import { getDatasets, uploadDataset, deleteDataset, downloadDataset } from '@/api'
 
 const columns = [
   { title: '数据集名称', key: 'name', dataIndex: 'name' },
@@ -196,7 +199,7 @@ const columns = [
   { title: '大小', key: 'size', dataIndex: 'size' },
   { title: '状态', key: 'status', dataIndex: 'status' },
   { title: '创建时间', key: 'created_at', dataIndex: 'created_at' },
-  { title: '操作', key: 'action', width: 150 }
+  { title: '操作', key: 'action', width: 200 }
 ]
 
 const datasets = ref([])
@@ -336,6 +339,37 @@ const handleDelete = async (id) => {
     loadDatasets()
   } catch (error) {
     console.error('删除失败:', error)
+  }
+}
+
+const handleDownload = async (id) => {
+  try {
+    const res = await downloadDataset(id)
+    
+    // 获取文件名
+    let filename = `dataset_${id}.zip`
+    const contentDisposition = res.headers['content-disposition']
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename="?(.+)"?/)
+      if (filenameMatch) {
+        filename = filenameMatch[1]
+      }
+    }
+    
+    // 创建下载链接
+    const url = window.URL.createObjectURL(new Blob([res.data]))
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', filename)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    
+    message.success('下载成功')
+  } catch (error) {
+    console.error('下载失败:', error)
+    message.error('下载失败，请稍后再试')
   }
 }
 
